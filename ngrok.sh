@@ -2,13 +2,26 @@
 #==============================================================#
 #   Description: Ngrok Install Shell                           #
 #   Author: reruin <reruin@gmail.com>                          #
-#   Visit:  https://fansh.org                                  #
+#   Intro:  https://fansh.org                                  #
 #==============================================================#
 
 PATH=/bin:/sbin:/usr/bin:/usr/sbin:/usr/local/bin:/usr/local/sbin:~/bin
 export PATH
 
 ngrok_dir="/usr/local/ngrok"
+
+ngrok_bin=${ngrok_dir}/bin/ngrokd
+
+ngrok_log=${ngrok_dir}/ngrok.log
+
+ngrok_cfg=${ngrok_dir}/ngrok.conf
+
+server_crt=${ngrok_dir}/server.crt
+server_key=${ngrok_dir}/server.key
+
+currentfile=${BASH_SOURCE[0]} 
+
+echo "${basepath}"
 
 os_bit_64=1
 
@@ -22,7 +35,30 @@ check_os_bit(){
 	fi
 }
 
+wait_(){
+	sleep 1
+	echo -n '.'
+	sleep 1
+	echo -n '.'
+	sleep 1
+	echo -n '.'
+
+}
+
+wait_for(){
+	count=0;  
+    while [ $count -lt $1 ] ;  
+    	do  
+    	echo -n ".";  
+    	let ++count;  
+    	sleep 1;  
+    done  
+
+    return 0; 
+}
+
 install_dep(){
+	echo "Preparatory work ... "
 	[[ -f /etc/redhat-release ]] && os='centos'
 	[[ ! -z "`egrep -i debian /etc/issue`" ]] && os='debian'
 	[[ ! -z "`egrep -i ubuntu /etc/issue`" ]] && os='ubuntu'
@@ -30,97 +66,311 @@ install_dep(){
 	[[ "$os" == '' ]] && echo 'Error: Your system is not supported to run it!' && exit 1
 
 	if [ "$os" == 'centos' ]; then
-		yum -y install net-tools openssl-devel wget vim curl curl-devel
+		yum -y -q install wget vim curl curl-devel >/dev/null 2>&1
 	else
-		apt-get update
-		apt-get -y install wget build-essential curl vim openssl libcurl4-openssl-dev net-tools 
+		apt-get update >/dev/null 2>&1
+		apt-get -y -qq install wget curl vim openssl libcurl4-openssl-dev >/dev/null 2>&1
 	fi
 }
 
 
-install_ngrok(){
-	intro
+do_install(){
+	header
 
-	echo "Install Ngrok ..."
+	echo "============== Install =============="
 
-	read -p "Please input domain for Ngrok(e.g.:ngrok.example.com):" NGROK_DOMAIN
-	read -p "Please input password for Ngrok(Default Password: 123456}):" ngrok_pass
+	set_cofig_process
 
-	if [ "$ngrok_pass" = "" ]; then
-		ngrok_pass="123456"
-	fi
-
-
-	echo  "Domain: "${NGROK_DOMAIN}"."
-	echo -e "Ngrok Pass: ${COLOR_PINKBACK_WHITEFONT} "${ngrok_pass}" ${COLOR_END}."
-    echo -e "Press any key to start...or Press Ctrl+c to cancel"
-    char=`get_char`
-	clear
+	install_dep
 
 	program_file="linux_386"
 
 	if [ "${os_bit_64}" = 1 ] ; then
-		program_file = "linux_amd64"
+		program_file="linux_amd64"
 	fi
 
-	if ! wget --no-check-certificate ${download_url}${program_file} -O ${ngrok_dir}/bin/ngrokd; then
+	if ! wget --no-check-certificate ${download_url}${program_file} -O ${ngrok_bin}; then
         echo "Failed to download ${program_file} file!"
         exit 1
     fi
 
+    chmod 755 ${ngrok_bin}
     cd ${ngrok_dir}
+
     openssl genrsa -out rootCA.key 2048
-    openssl req -x509 -new -nodes -key rootCA.key -subj "/CN=$NGROK_DOMAIN" -days 5000 -out rootCA.pem
+    openssl req -x509 -new -nodes -key rootCA.key -subj "/CN=${domain}" -days 5000 -out rootCA.pem
     openssl genrsa -out server.key 2048
-    openssl req -new -key server.key -subj "/CN=$NGROK_DOMAIN" -out server.csr
+    openssl req -new -key server.key -subj "/CN=${domain}" -out server.csr
     openssl x509 -req -in server.csr -CA rootCA.pem -CAkey rootCA.key -CAcreateserial -out server.crt -days 5000
 
-	/usr/local/ngrok/bin/ngrokd -domain=$NGROK_DOMAIN -httpAddr=":51221"
+    do_start
 
-    intro
+    echo "Install Ngrok completed."
 
-    echo "Install Ngrok completed! enjoy it."
-    echo "============================================"
-    echo -e "Your Domain: ${COLOR_GREEN}${NGROK_DOMAIN}${COLOR_END}"
-    echo -e "Ngrok password: ${COLOR_GREEN}${ngrok_pass}${COLOR_END}"
-    echo -e "http_port: ${COLOR_GREEN}80${COLOR_END}"
-    echo -e "https_port: ${COLOR_GREEN}443${COLOR_END}"
-    echo -e "remote_port: ${COLOR_GREEN}4443${COLOR_END}"
-    echo "============================================"
+    if [ "${arg1}" = "install" ]; then
+      exit 0
+    fi
+
+    init
 }
 
 
-uninstall_ngrok(){
-	intro
+do_uninstall(){
+	header
+
 	echo "============== Uninstall =============="
-	/etc/init.d/ngrokd stop
+	
 
-	read -p "(Do you want to KEEP the config file , Default [y]):" save_config
+	read -p "Do you want to KEEP the config file , Default [y]:" strSaveConfig
 
-	# remove log
-	rm -f /etc/init.d/ngrokd /usr/bin/ngrokd /var/run/ngrok_clang.pid /root/ngrok_install.log /root/ngrok_update.log
+	local PID=`ps -ef | grep -v grep | grep -i "${ngrok_bin}" | awk '{print $2}'`
 
-    if [ "${save_config}" == 'y' ]; then
-        rm -rf ${ngrok_dir}/bin/ ${ngrok_dir}/ngrok.log ${ngrok_dir}/rootCA.* ${ngrok_dir}/server.*
+	if [ ! -z $PID ]; then
+        kill -9 $PID >/root/a.txt 2>&1
+    fi
+
+
+	if [ "${strSaveConfig}" = "" ]; then
+		strSaveConfig="y"
+	fi
+
+    if [ "${strSaveConfig}" = 'y' ]; then
+        rm -rf ${ngrok_dir}/bin ${ngrok_dir}/ngrok.log ${ngrok_dir}/rootCA.* 
     else
         rm -rf ${ngrok_dir}
     fi
 
     echo "Ngrok uninstall success!"
-    echo ""
+
+    if [ "${arg1}" = "uninstall" ]; then
+      exit 0
+    fi
+
+	$currentfile
+}
+
+check_run(){
+	local PID=`ps -ef | grep -v grep | grep -i "${ngrok_bin}" | awk '{print $2}'`
+
+	if [ -z ${PID} ]; then
+        return 1
+    else
+        return 0
+    fi
+}
+
+do_start(){
+
+	header
+	
+	if check_run; then
+		echo "Ngrok is already running ..."
+		exit 0
+	fi
+
+    get_config
+
+    if [ "${1}" = "r" ] ; then
+    	echo -n "Restarting : "
+    else
+    	echo -n "Starting : "
+    fi
+
+
+	${ngrok_bin} -domain="${domain}" -httpAddr=":${httpAddr}" -httpsAddr=":${httpsAddr}" -pass="${pass}" -tlsCrt="${server_crt}" -tlsKey="${server_key}" > ${ngrok_log} 2>&1 &
+    #-log "${ngrok_log}" 
+    wait_
+
+    if check_run; then
+        echo "    [OK]"
+    else
+        echo "    [FAILED]"
+    fi
+}
+
+do_stop(){	
+	header
+
+	echo -n "Stopping : "
+
+	local PID=`ps -ef | grep -v grep | grep -i "${ngrok_bin}" | awk '{print $2}'`
+	
+
+	if [ ! -z $PID ]; then
+		# echo "#!/bin/bash" > ${ngrok_dir}/.stop.sh
+
+		# for i in $PID  
+		# do  
+		#   echo "kill -9 $i" >> ${ngrok_dir}/.stop.sh
+		# done
+
+		# chmod 500 ${ngrok_dir}/.stop.sh
+
+		# ${ngrok_dir}/.stop.sh
+
+
+
+        
+		for i in $PID  
+		do  
+		  kill -9 $i >/dev/null 2>&1
+		done
+        echo "    [OK]"
+        #rm -f ${ngrok_pid}
+    else
+        echo "Ngrok is not running."
+    fi
+
+    #RETVAL=$?
+
+	#$currentfile
+
+	exit 0
+}
+
+do_restart(){
+	header
+
+	local PID=`ps -ef | grep -v grep | grep -i "${ngrok_bin}" | awk '{print $2}'`
+
+    echo -n "Stopping : "
+
+	if [ ! -z $PID ]; then
+        kill -9 $PID >/dev/null 2>&1
+        echo "    [OK]"
+    else
+    	echo "    [OK]"
+    fi
+
+    $currentfile "start" "r"
+
+    exit 0
+}
+
+get_config(){
+	if [ ! -r ${ngrok_cfg} ]; then
+        echo "config file ${ngrok_cfg} not found"
+        init
+    else
+		domain=$(cat $ngrok_cfg | jq '.domain')
+		httpAddr=$(cat $ngrok_cfg | jq '.http_addr')
+		httpsAddr=$(cat $ngrok_cfg | jq '.https_addr')
+		pass=$(cat $ngrok_cfg | jq '.pass')
+    fi
+}
+
+do_config(){
+	header
+
+	echo "============== Edit Config =============="
+	echo ""
+	set_cofig_process
+}
+
+set_cofig_process(){
+
+	read -p "Please input domain for Ngrok(e.g.:ngrok.example.com):" domain
+	read -p "Please input password for Ngrok(Default: 123456}):" ngrok_pass
+	read -p "Please input http port for Ngrok(Default: 80}):" http_port
+	read -p "Please input https port for Ngrok(Default: 443}):" https_port
+
+	if [ "${ngrok_pass}" = "" ]; then
+		ngrok_pass="123456"
+	fi
+
+	if [ "${http_port}" = "" ]; then
+		http_port="80"
+	fi
+
+	if [ "${https_port}" = "" ]; then
+		https_port="443"
+	fi
+
+	echo ""
+	echo "domain: "${domain}
+	echo "password: "${ngrok_pass}
+	echo "http port: "${http_port}
+	echo "https port: "${https_port}
+	echo ""
+	read -p "Please confirm config (Y/n):" strConfirmSaveCfg
+
+	case "${strConfirmSaveCfg}" in
+        y|Y|Yes|YES|yes|yES|yEs|YeS|yeS)
+			echo ""
+			strConfirmSaveCfg='y'
+		;;
+		n|N|No|NO|no|nO)
+        	echo ""
+        	strConfirmSaveCfg='n'
+        ;;
+		*)
+			echo ""
+			strConfirmSaveCfg='y'
+		;;
+	esac
+    if [ "${strConfirmSaveCfg}" = "y" ]; then
+		echo '{"domain":"'${domain}'","pass":"'${ngrok_pass}'","http_addr":'${http_port}',"https_addr":'${https_port}'}' > ${ngrok_cfg}
+	else
+		set_cofig_process
+	fi
+
+	if [ "${arg1}" = "config" ] ; then
+    	exit 0
+    elif [ "${arg1}" = "install" ]; then
+    	echo -n ""
+  	else
+  		init
+    fi
+
 }
 
 
-intro(){
+do_status(){
+	header
+
+	echo ""
+	domain=$(cat $ngrok_cfg | jq '.domain')
+	httpAddr=$(cat $ngrok_cfg | jq '.http_addr')
+	httpsAddr=$(cat $ngrok_cfg | jq '.https_addr')
+	pass=$(cat $ngrok_cfg | jq '.pass')
+
+	echo  "domain: "${domain}
+	echo -e "password: ${COLOR_PINKBACK_WHITEFONT} "${pass}" ${COLOR_END}."
+	echo "http port: "${httpAddr}
+	echo "https port: "${httpsAddr}
+
+	echo ""
+	if check_run; then
+		echo "Ngrok is running ..."
+	else
+		echo "Ngrok is NOT running ..."
+	fi
+	echo ""
+}
+
+check_env(){
+	mkdir -p ${ngrok_dir}/bin
+}
+
+init(){
+	echo ""
+	echo "Press any key to continue ..."
+	get_char
+	welcome
+}
+
+header(){
 	clear
-	echo "
-    #============================================
-    #   SYSTEM     :  Debian / Ubuntu / Centos
-    #   DESCRIPTION:  Install Ngrok
-    #   AUTHOR     :  reruin <reruin@gmail.com>
-    #   INTRO      :  https://fansh.org
-    #============================================
-	"
+	echo "+============================================================+"
+    echo "|                      Ngrok for Linux                       |"
+    echo "|                                                            |"
+    echo "|                                         <reruin@gmail.com> |"
+    echo "|------------------------------------------------------------|"
+    echo "|                                          https://fansh.org |"
+    echo "+============================================================+"
+	echo ""
+
+	check_env
 }
 
 get_char()
@@ -134,53 +384,51 @@ get_char()
     stty $SAVEDSTTY
 }
 
-set_params(){
-	COLOR_RED='\E[1;31m'
-    COLOR_GREEN='\E[1;32m'
-    COLOR_YELOW='\E[1;33m'
-    COLOR_BLUE='\E[1;34m'
-    COLOR_PINK='\E[1;35m'
-    COLOR_PINKBACK_WHITEFONT='\033[45;37m'
-    COLOR_GREEN_LIGHTNING='\033[32m \033[05m'
-    COLOR_END='\E[0m'
-}
-
 welcome(){
-	intro
-	set_params
-	echo "
-	1. Install
-	2. Uninstall
-	3. Create Config
-	4. Show Config
-	0. Exit
 
-	"
+	header
+	echo " 1. Install"
+	echo " 2. Uninstall"
+	echo " 3. Edit Config"
+	echo " 4. Show Config"
+	echo " 0. Exit"
+	echo ""
+
 	read num
 	case "$num" in
 		[1] )
-			install_dep
-			install_ngrok
+			do_install
 		;;
 		[2] )
-			uninstall_ngrok
+			do_uninstall
 		;;
 		[3] )
-			echo "Please Enter Domain"
-			read domain
-			echo "Runing Port"
-			read port
-			/usr/local/ngrok/bin/ngrokd -domain=$domain -httpAddr=":$port"
+			do_cofig
 		;;
 		[4] )
-			echo "Please Enter Domain"
-			read domain
-			echo server_addr: '"'$domain:4443'"'
-			echo "trust_host_root_certs: false"
-
+			do_status
 		;;
-		*) echo "";;
+		[0] )
+			exit 0
+		;;
+		*) 
+			welcome
+		;;
 	esac
+
+	exit 0
 }
 
-welcome
+
+arg1=${1}
+arg2=${2}
+[  -z ${arg1} ]
+case "${arg1}" in
+    install|uninstall|start|stop|restart|config|status)
+        do_${arg1} ${arg2}
+    ;;
+    *)
+        echo -ne "Usage:\n     $0 [ install | uninstall | start | stop | restart | config | status ]\n\n"
+
+    ;;
+esac
