@@ -29,9 +29,9 @@ download_url="https://raw.githubusercontent.com/reruin/ngrok/master/server/serve
 
 check_os_bit(){
 	if [ $(getconf WORD_BIT) = '32' ] && [ $(getconf LONG_BIT) = '64' ];then
-		os_bit_64 = 1
+		os_bit_64=1
 	else
-		os_bit_64 = 0
+		os_bit_64=0
 	fi
 }
 
@@ -66,10 +66,10 @@ install_dep(){
 	[[ "$os" == '' ]] && echo 'Error: Your system is not supported to run it!' && exit 1
 
 	if [ "$os" == 'centos' ]; then
-		yum -y -q install wget vim curl curl-devel >/dev/null 2>&1
+		yum -y -q install wget vim curl curl-devel jq >/dev/null 2>&1
 	else
 		apt-get update >/dev/null 2>&1
-		apt-get -y -qq install wget curl vim openssl libcurl4-openssl-dev >/dev/null 2>&1
+		apt-get -y -qq install wget curl vim openssl libcurl4-openssl-dev jq >/dev/null 2>&1
 	fi
 }
 
