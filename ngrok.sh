@@ -349,6 +349,7 @@ do_status(){
 }
 
 check_env(){
+	check_os_bit
 	mkdir -p ${ngrok_dir}/bin
 }
 
