@@ -69,7 +69,7 @@ install_dep(){
 		yum -y -q install wget vim curl curl-devel jq >/dev/null 2>&1
 	else
 		apt-get update >/dev/null 2>&1
-		apt-get -y -qq install wget curl vim openssl libcurl4-openssl-dev jq >/dev/null 2>&1
+		apt-get -y -q install wget curl vim openssl libcurl4-openssl-dev jq >/dev/null 2>&1
 	fi
 }
 
